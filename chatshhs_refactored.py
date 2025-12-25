@@ -468,7 +468,7 @@ API 목록:
 if "show_chat" not in st.session_state:
     st.session_state.show_chat = False
 if not st.session_state.show_chat:
-    st.image("https://github.com/hajing09-dev/JumpDino/blob/temp/seohyun.png?raw=true", width=400)
+    st.image("https://github.com/hajing09-dev/ChatSHHS/blob/main/seohyun.png?raw=true", width=400)
     st.title("ChatSHHS")
     st.markdown("""
     ## 안내 및 주의 사항
@@ -490,7 +490,7 @@ else:
     st.markdown(
         """
         <div style='display: flex; align-items: center; gap: 10px;'>
-            <img src='https://github.com/hajing09-dev/JumpDino/blob/temp/seohyun.png?raw=true' width='100'/>
+            <img src='https://github.com/hajing09-dev/ChatSHHS/blob/main/seohyun.png?raw=true' width='100'/>
             <h1 style='margin:0;'>ChatSHHS</h1>
         </div>
         """,
@@ -524,7 +524,7 @@ else:
         """
         st.markdown(f"""
         <div style='display:flex; align-items:center; text-align:left; background:{assistant_bg}; color:{assistant_color}; padding:8px 16px; border-radius:12px; margin:8px 0; max-width:70%; box-shadow:0 2px 8px {shadow};'>
-            <img src='https://github.com/hajing09-dev/JumpDino/blob/temp/seohyun.png?raw=true' width='32' style='margin-right:8px; border-radius:50%;'/>
+            <img src='https://github.com/hajing09-dev/ChatSHHS/blob/main/seohyun.png?raw=true' width='32' style='margin-right:8px; border-radius:50%;'/>
             <div>
                 <b style='color:{assistant_name};'>ChatSHHS</b><br>{content}
             </div>
