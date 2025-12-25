@@ -1,7 +1,24 @@
 import requests
+import os
+try:
+    import streamlit as st
+    has_streamlit = True
+except:
+    has_streamlit = False
+
+def get_neis_key():
+    """NEIS 서비스 키를 secrets.toml 또는 환경변수에서 로드"""
+    if has_streamlit:
+        try:
+            return st.secrets["neis"]["service_key"]
+        except:
+            pass
+    return os.getenv("NEIS_API_KEY")
 
 def call_school_api(api_name, date=None, grade=None, classnum=None, info_type=None):
-    service_key = "13dfeef247464e6fbf4a5071623395ec"
+    service_key = get_neis_key()
+    if not service_key:
+        return "NEIS API 키가 설정되지 않았습니다. .streamlit/secrets.toml 파일에 추가하거나 NEIS_API_KEY 환경 변수를 설정해주세요."
     base_urls = {
         "lunch": "https://open.neis.go.kr/hub/mealServiceDietInfo",
         "schedule": "https://open.neis.go.kr/hub/hisTimetable",

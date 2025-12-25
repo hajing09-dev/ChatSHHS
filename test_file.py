@@ -9,9 +9,17 @@ import os
 #급식 정보 호출
 def lunch(date):
   url="https://open.neis.go.kr/hub/mealServiceDietInfo"
-  service_key="13dfeef247464e6fbf4a5071623395ec"
+  # NEIS API 키 로드
+  try:
+    neis_key = st.secrets["neis"]["service_key"]
+  except:
+    neis_key = os.getenv("NEIS_API_KEY")
+  
+  if not neis_key:
+    return 'NEIS API 키가 설정되지 않음'
+  
   params={
-      'KEY':service_key,
+      'KEY':neis_key,
       'Type':'STRING',
       'MLSV_YMD':date,
       'pSize':'1',
@@ -28,9 +36,17 @@ def lunch(date):
 #시간표
 def schedule(date, grade, classnum):
   url="https://open.neis.go.kr/hub/hisTimetable"
-  service_key="13dfeef247464e6fbf4a5071623395ec"
+  # NEIS API 키 로드
+  try:
+    neis_key = st.secrets["neis"]["service_key"]
+  except:
+    neis_key = os.getenv("NEIS_API_KEY")
+  
+  if not neis_key:
+    return 'NEIS API 키가 설정되지 않음'
+  
   params={
-      'KEY':service_key,
+      'KEY':neis_key,
       'Type':'STRING',
       'GRADE':grade,
       'CLASS_NM':classnum,
@@ -94,9 +110,17 @@ school_info_dict = {
 #학교 기본 정보
 def inform(info_type):
   url="https://open.neis.go.kr/hub/schoolInfo"
-  service_key="13dfeef247464e6fbf4a5071623395ec"
+  # NEIS API 키 로드
+  try:
+    neis_key = st.secrets["neis"]["service_key"]
+  except:
+    neis_key = os.getenv("NEIS_API_KEY")
+  
+  if not neis_key:
+    return 'NEIS API 키가 설정되지 않음'
+  
   params={
-      'KEY':service_key,
+      'KEY':neis_key,
       'Type':'STRING',
       'pSize':'10',
       'ATPT_OFCDC_SC_CODE':'J10',
@@ -123,9 +147,17 @@ def inform(info_type):
   return row_dict[info_type]
 def year_sch(date):
   url="https://open.neis.go.kr/hub/SchoolSchedule"
-  service_key="13dfeef247464e6fbf4a5071623395ec"
+  # NEIS API 키 로드
+  try:
+    neis_key = st.secrets["neis"]["service_key"]
+  except:
+    neis_key = os.getenv("NEIS_API_KEY")
+  
+  if not neis_key:
+    return 'NEIS API 키가 설정되지 않음'
+  
   params={
-      'KEY':service_key,
+      'KEY':neis_key,
       'Type':'STRING',
       'pSize':'1',
       'ATPT_OFCDC_SC_CODE':'J10',
@@ -294,6 +326,8 @@ else:
     # Initialize recommended questions flag
     if "recommended_used" not in st.session_state:
         st.session_state.recommended_used = False
+    if "queued_prompt" not in st.session_state:
+        st.session_state.queued_prompt = ""
 
     # Display chat messages from history on app rerun (커스텀 방향)
     for message in st.session_state.messages:
@@ -318,28 +352,35 @@ else:
     
     # Recommended questions (show only if not used)
     if not st.session_state.recommended_used:
-        ex1=st.button('내일 급식 메뉴가 뭐야?')
-        ex2=st.button('12월 26일에 무슨 행사가 있어?')
-    else:
-        ex1 = False
-        ex2 = False
+        ex1 = st.button('내일 급식 메뉴가 뭐야?')
+        ex2 = st.button('12월 26일에 무슨 행사가 있어?')
+        if ex1:
+            st.session_state.queued_prompt = '내일 급식 메뉴가 뭐야?'
+            st.session_state.recommended_used = True
+            st.rerun()
+        if ex2:
+            st.session_state.queued_prompt = '12월 26일에 무슨 행사가 있어?'
+            st.session_state.recommended_used = True
+            st.rerun()
     
-    # React to user input
-    if prompt := st.chat_input("질문을 입력하세요"):
+    # 만약 큐에 들어온 프롬프트가 있으면 처리하기
+    if st.session_state.get("queued_prompt"):
+        temp_q = st.session_state.queued_prompt
+        st.session_state.queued_prompt = ""
         # 유저 메시지(오른쪽, 이미지 포함)
         st.markdown(f"""
         <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
             <img src='https://cdn-icons-png.flaticon.com/512/1946/1946429.png' width='32' style='margin-left:8px; border-radius:50%;'/>
             <div>
-                <b>나</b><br>{prompt}
+                <b>나</b><br>{temp_q}
             </div>
         </div>
         """, unsafe_allow_html=True)
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append({"role": "user", "content": temp_q})
 
         # 챗봇 메시지(왼쪽, 이미지 포함, 생성중 표시)
         with st.spinner("생성 중... 💬"):
-            response = respond(prompt)
+            response = respond(temp_q)
         st.markdown(f"""
         <div style='display:flex; align-items:center; text-align:left; background:#fffde7; padding:8px 16px; border-radius:12px; margin:8px 0; max-width:70%; box-shadow:0 2px 8px #eee;'>
             <img src='https://github.com/hajing09-dev/ChatSHHS/blob/main/seohyun.png?raw=true' width='32' style='margin-right:8px; border-radius:50%;'/>
@@ -349,34 +390,9 @@ else:
         </div>
         """, unsafe_allow_html=True)
         st.session_state.messages.append({"role": "assistant", "content": response})
-    if ex1:
-        st.session_state.recommended_used = True
-        prompt='내일 급식 메뉴가 뭐야?'
-        st.markdown(f"""
-        <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
-            <img src='https://cdn-icons-png.flaticon.com/512/1946/1946429.png' width='32' style='margin-left:8px; border-radius:50%;'/>
-            <div>
-                <b>나</b><br>{prompt}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.session_state.messages.append({"role": "user", "content": prompt})
-
-        # 챗봇 메시지(왼쪽, 이미지 포함, 생성중 표시)
-        with st.spinner("생성 중... 💬"):
-            response = respond(prompt)
-        st.markdown(f"""
-        <div style='display:flex; align-items:center; text-align:left; background:#fffde7; padding:8px 16px; border-radius:12px; margin:8px 0; max-width:70%; box-shadow:0 2px 8px #eee;'>
-            <img src='https://github.com/hajing09-dev/ChatSHHS/blob/main/seohyun.png?raw=true' width='32' style='margin-right:8px; border-radius:50%;'/>
-            <div>
-                <b>ChatSHHS</b><br>{response}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-    if ex2:
-        st.session_state.recommended_used = True
-        prompt='12월 26일에 무슨 행사가 있어?'
+        st.rerun()
+    if prompt := st.chat_input("질문을 입력하세요"):
+        # 유저 메시지(오른쪽, 이미지 포함)
         st.markdown(f"""
         <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
             <img src='https://cdn-icons-png.flaticon.com/512/1946/1946429.png' width='32' style='margin-left:8px; border-radius:50%;'/>
