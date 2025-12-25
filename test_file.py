@@ -5,6 +5,8 @@ import requests
 import xml.etree.ElementTree as ET
 from openai import OpenAI
 import datetime
+import pytz
+import re
 import os
 #급식 정보 호출
 def lunch(date):
@@ -169,9 +171,50 @@ def year_sch(date):
     return 'None'
   else:
     return response.split('EVENT_NM')[1]
+
+def convert_relative_date_in_text(text, today_kst):
+    """사용자 입력에서 상대 날짜 표현을 YYYYMMDD로 변환합니다."""
+    
+    # 한국식 주 구분: 일요일 시작
+    days_since_sunday = (today_kst.weekday() + 1) % 7
+    this_week_start = today_kst - datetime.timedelta(days=days_since_sunday)
+    next_week_start = this_week_start + datetime.timedelta(days=7)
+    
+    # 상대 날짜 매핑
+    replacements = {
+        r'내일': (today_kst + datetime.timedelta(days=1)).strftime('%Y년 %m월 %d일'),
+        r'모레': (today_kst + datetime.timedelta(days=2)).strftime('%Y년 %m월 %d일'),
+        r'어제': (today_kst - datetime.timedelta(days=1)).strftime('%Y년 %m월 %d일'),
+        r'다음주\s*월요일': (next_week_start + datetime.timedelta(days=1)).strftime('%Y년 %m월 %d일'),
+        r'다음주\s*화요일': (next_week_start + datetime.timedelta(days=2)).strftime('%Y년 %m월 %d일'),
+        r'다음주\s*수요일': (next_week_start + datetime.timedelta(days=3)).strftime('%Y년 %m월 %d일'),
+        r'다음주\s*목요일': (next_week_start + datetime.timedelta(days=4)).strftime('%Y년 %m월 %d일'),
+        r'다음주\s*금요일': (next_week_start + datetime.timedelta(days=5)).strftime('%Y년 %m월 %d일'),
+        r'다음주\s*토요일': (next_week_start + datetime.timedelta(days=6)).strftime('%Y년 %m월 %d일'),
+        r'다음주\s*일요일': next_week_start.strftime('%Y년 %m월 %d일'),
+        r'이번주\s*월요일': (this_week_start + datetime.timedelta(days=1)).strftime('%Y년 %m월 %d일'),
+        r'이번주\s*화요일': (this_week_start + datetime.timedelta(days=2)).strftime('%Y년 %m월 %d일'),
+        r'이번주\s*수요일': (this_week_start + datetime.timedelta(days=3)).strftime('%Y년 %m월 %d일'),
+        r'이번주\s*목요일': (this_week_start + datetime.timedelta(days=4)).strftime('%Y년 %m월 %d일'),
+        r'이번주\s*금요일': (this_week_start + datetime.timedelta(days=5)).strftime('%Y년 %m월 %d일'),
+        r'이번주\s*토요일': (this_week_start + datetime.timedelta(days=6)).strftime('%Y년 %m월 %d일'),
+        r'이번주\s*일요일': this_week_start.strftime('%Y년 %m월 %d일'),
+    }
+    
+    converted_text = text
+    for pattern, replacement in replacements.items():
+        converted_text = re.sub(pattern, replacement, converted_text)
+    
+    return converted_text
+
 def respond(prompt):
-    #챗봇에게 날짜를 제공하기 위한 변수
-    today = datetime.date.today().isoformat()
+    # 한국 시간대로 오늘 날짜 설정
+    kst = pytz.timezone('Asia/Seoul')
+    today_kst = datetime.datetime.now(kst).date()
+    today = today_kst.isoformat()
+    
+    # 사용자 입력에서 상대 날짜를 절대 날짜로 변환
+    converted_prompt = convert_relative_date_in_text(prompt, today_kst)
 
     # API 키 로드: secrets.toml 또는 환경 변수 사용
     try:
@@ -182,69 +225,50 @@ def respond(prompt):
     if not api_key:
         st.error("⚠️ OpenAI API 키가 설정되지 않았습니다. .streamlit/secrets.toml 파일에 추가하거나 OPENAI_API_KEY 환경 변수를 설정해주세요.")
         st.stop()
-    
+
     # OpenAI 클라이언트 초기화
     client = OpenAI(api_key=api_key)
-    week=datetime.datetime.now()
-    weeknum=week.weekday()
-    weekdays_kr = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
-    weekday=weekdays_kr[weeknum]
 
+    messages = [
+        {"role": "system", "content": f'''너는 서현고등학교 구성원들을 돕는 유용한 ChatSHHS이고 오늘 날짜는 {today}이야.
 
-    def generate_dialogue(messages, model="gpt-4.1-mini-2025-04-14",
-                          temperature=0.7, top_p=1.0, frequency_penalty=0.0, presence_penalty=0.0, max_tokens=700):
-        response = client.chat.completions.create(
-            messages=messages,
-            model=model,
-            max_tokens=max_tokens,
-            top_p=top_p,
-            frequency_penalty=frequency_penalty,
-            presence_penalty=presence_penalty
-        )
-        return response
-    def reason_dialogue(messages, model="o4-mini-2025-04-16",
+참고: 사용자가 "다음주 월요일" 같은 상대 날짜를 말하면, 이미 서버에서 절대 날짜(예: 2025년 12월 29일)로 변환되어 전달됩니다.
+
+질문마다 ***매번*** 다음 순서를 따라:
+1. 사용자의 질문이 너의 지식 밖이고 현재까지 API에서 얻은 결과로 알 수 없어 추가적으로 API를 불러와야 하는거라면 'API: '라 쓴 후 아래 API 표를 참고해 API 명과 그 뒤 {{}}(있다면)로 된 정보를 줘.
+***모르는 정보라면 그에 맞는 API를 불러와***
+2. 너가 답변을 아는 질문일 때만 사용자에 대답해. 그땐 API를 불러오지마.
+
+예시:
+2025년 06월 14일 2학년 6반 시간표 뭐야?
+-> API: schedule, 20250614, 2, 6
+그럼 5반은?
+-> API: schedule, 20250614, 2, 5
+
+API 표:
+-시간표: schedule, {{YYYYMMDD}}, {{grade}}, {{class}}
+-학교 기본 정보(주소, 전화번호, 개교기념일 등): inform
+-학사일정: year_sch, {{YYYYMMDD}}
+-급식정보: lunch, {{YYYYMMDD}}
+        '''},
+    ]+st.session_state.messages
+
+    def generate_dialogue(messages, model="gpt-4.1-mini-2025-04-14", max_tokens=150,
                           temperature=0.7, top_p=1.0, frequency_penalty=0.0, presence_penalty=0.0):
         response = client.chat.completions.create(
             messages=messages,
             model=model,
+            max_tokens=max_tokens,
+            temperature=temperature,
             top_p=top_p,
             frequency_penalty=frequency_penalty,
             presence_penalty=presence_penalty
         )
         return response
 
-    dateres=reason_dialogue([{"role": "system", "content": f'''오늘 날짜는 {today} {weekday}야. 사용자의 프롬프트에 필요한 날짜를 현재 날짜와 요일을 고려하여 구하고 20251222와 같은 형태로 나타내서 그것만 출력해. 날짜가 필요 없는 경우 None으
-        '''}]+[st.session_state.messages[-1]])
-    date=dateres.choices[0].message.content.strip().split("\n\n")[0]
-    print(date)
-    messages = [
-        {"role": "system", "content": f'''너는 서현고등학교 구성원들을 돕는 유용한 ChatSHHS이야. 지금까지 대화 맥락에 따라 질문 의도를 파악해.
-        질문마다 ***매번*** 다음 순서를 따라:
-        1. 사용자의 질문이 너의 지식 밖이고 현재까지 API에서 얻은 결과로 알 수 없어 추가적으로 API를 불러와야 하는거라면 'API: '라 쓴 후 아래 API 표를 참고해 API 명과 그 뒤 {{}}(있을 경우만, 없는 경우엔 필요없어.)로 된 정보를 줘.
-        ***모르는 정보라면 그에 맞는 API를반드시 불러와***
 
-        예시:
-        내일 2학년 6반 시간표 뭐야?
-        -> API: schedule, 20250614, 2, 6
-        그럼 5반은?
-        -> API: schedule, 20250614, 2, 5
-
-
-        API 표:
-        -시간표: schedule, {{grade}}, {{class}}
-        -학교 기본 정보(주소, 전화번호, 개교기념일 등 / ChatSHHS에 대한 정보는 없음!): inform
-        -학사일정: year_sch
-        -급식정보: lunch
-        '''},
-    ]+st.session_state.messages
-
-
-
-
-    messages.append({"role": "user", "content": "모르면 지어내지 말고 API 호출하기!:" + prompt})
-
+    messages.append({"role": "user", "content": "지어내지 말고 API 호출하기!:" + converted_prompt})
     dialogue = generate_dialogue(messages)
-    print(dialogue)
 
         # 결과를 대화 형식으로 출력
     for choice in dialogue.choices:
@@ -254,30 +278,25 @@ def respond(prompt):
                 res = res[5:]
                 res = res.split(", ")
                 if res[0] == "schedule":
-                    api_info = schedule(date, res[1], res[2], res[3])
+                    api_info = schedule(res[1], res[2], res[3])
                 elif res[0] == "inform":
-                    sub_messages=[messages[-1]]
-                    sub_messages.append({"role": "system", "content": str(school_info_dict) + "\nONLY SAY THE ENGLISH CODE THAT IS NEEDED FOR THE INFORMATION 예:학교명 -> SCHUL_NM / 없다면 NONE"})
-                    dialogue = generate_dialogue(sub_messages)
+                    messages.append({"role": "system", "content": str(school_info_dict) + "\n이 딕셔너리에서 필요한 정보에 대해 반드시 영문코드'만' 출력해. 예:학교명 -> SCHUL_NM / 없다면 NONE"})
+                    dialogue = generate_dialogue(messages)
                     messages.pop()
                     for choice in dialogue.choices:
                         message_content = choice.message.content.strip()
-                        result = message_content.split("\n\n")[0]
-                        print(result)
-                        if result == "NONE":
-
+                        res = message_content.split("\n\n")[0]
+                        if res == "NONE":
                             api_info = "None"
                         else:
-                            api_info = str(inform(result))
+                            api_info = str(inform(res))
                 elif res[0] == "year_sch":
-                    api_info = year_sch(date)
+                    api_info = year_sch(res[1])
                 elif res[0] == "lunch":
-                    api_info = lunch(date)
-                    print(api_info)
+                    api_info = lunch(res[1])
 
-                messages.append({"role": "system", "content": f'''이 내용을 이용해 사용자의 질문에 답변해. *주의: 지금은 API를 불러오는 것이 아닌, 그 결과를 바탕으로 정확하게 답변할 때야. 끝까지 대답해.
+                messages.append({"role": "system", "content": f'''이 내용을 이용해 사용자의 질문에 답변해.*주의: 지금은 API를 불러오는 것이 아닌, 그 결과를 바탕으로 정확하게 답변할 때야
                 API 결과: {api_info}'''})
-
                 dialogue = generate_dialogue(messages)
                 for choice in dialogue.choices:
                     message_content = choice.message.content.strip()
@@ -286,6 +305,15 @@ def respond(prompt):
 
             else:
                 return res
+
+
+# 공통 처리 함수: 사용자 프롬프트를 받아서 화면에 표시하고 응답을 생성해 세션에 저장
+def process_user_prompt(prompt_text):
+    # 세션에 사용자 요청을 추가하고 챗봇 응답을 생성해 응답을 세션에 추가합니다.
+    st.session_state.messages.append({"role": "user", "content": prompt_text})
+    with st.spinner("생성 중... 💬"):
+        response = respond(prompt_text)
+    st.session_state.messages.append({"role": "assistant", "content": response})
 
 
 
@@ -319,15 +347,47 @@ else:
         unsafe_allow_html=True
     )
 
-    # Initialize chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
-    # Initialize recommended questions flag
+    # 추천 질문 버튼 상태 초기화 (한 번 사용하면 사라짐)
     if "recommended_used" not in st.session_state:
         st.session_state.recommended_used = False
     if "queued_prompt" not in st.session_state:
         st.session_state.queued_prompt = ""
+
+    # 로고 바로 아래에 추천 질문을 표시 (한 번 사용하면 숨김)
+    if not st.session_state.recommended_used:
+        recommended_questions = [
+            "어제 급식 알려줘",
+            "오늘 급식",
+            "이번 주 학사일정",
+            "2학년 6반 시간표"
+        ]
+        st.markdown("**추천 질문**")
+        cols = st.columns(len(recommended_questions))
+        for q, col in zip(recommended_questions, cols):
+            if col.button(q):
+                # 버튼 클릭 시 즉시 사용자 말풍선을 동일하게 렌더링한 뒤 프롬프트를 큐에 넣고 추천 질문은 다시 표시하지 않음
+                st.markdown(f"""
+                <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
+                    <img src='https://cdn-icons-png.flaticon.com/512/1946/1946429.png' width='32' style='margin-left:8px; border-radius:50%;'/>
+                    <div>
+                        <b>나</b><br>{q}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.session_state.queued_prompt = q
+                st.session_state.recommended_used = True
+                st.rerun()
+
+    # 만약 버튼으로 큐에 들어온 프롬프트가 있으면 처리하고 새로고침
+    if st.session_state.get("queued_prompt"):
+        temp_q = st.session_state.queued_prompt
+        st.session_state.queued_prompt = ""
+        process_user_prompt(temp_q)
+        st.rerun()
+
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
     # Display chat messages from history on app rerun (커스텀 방향)
     for message in st.session_state.messages:
@@ -349,69 +409,12 @@ else:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-    
-    # Recommended questions (show only if not used)
-    if not st.session_state.recommended_used:
-        ex1 = st.button('내일 급식 메뉴가 뭐야?')
-        ex2 = st.button('12월 26일에 무슨 행사가 있어?')
-        if ex1:
-            st.session_state.queued_prompt = '내일 급식 메뉴가 뭐야?'
-            st.session_state.recommended_used = True
-            st.rerun()
-        if ex2:
-            st.session_state.queued_prompt = '12월 26일에 무슨 행사가 있어?'
-            st.session_state.recommended_used = True
-            st.rerun()
-    
-    # 만약 큐에 들어온 프롬프트가 있으면 처리하기
-    if st.session_state.get("queued_prompt"):
-        temp_q = st.session_state.queued_prompt
-        st.session_state.queued_prompt = ""
-        # 유저 메시지(오른쪽, 이미지 포함)
-        st.markdown(f"""
-        <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
-            <img src='https://cdn-icons-png.flaticon.com/512/1946/1946429.png' width='32' style='margin-left:8px; border-radius:50%;'/>
-            <div>
-                <b>나</b><br>{temp_q}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.session_state.messages.append({"role": "user", "content": temp_q})
 
-        # 챗봇 메시지(왼쪽, 이미지 포함, 생성중 표시)
-        with st.spinner("생성 중... 💬"):
-            response = respond(temp_q)
-        st.markdown(f"""
-        <div style='display:flex; align-items:center; text-align:left; background:#fffde7; padding:8px 16px; border-radius:12px; margin:8px 0; max-width:70%; box-shadow:0 2px 8px #eee;'>
-            <img src='https://github.com/hajing09-dev/ChatSHHS/blob/main/seohyun.png?raw=true' width='32' style='margin-right:8px; border-radius:50%;'/>
-            <div>
-                <b>ChatSHHS</b><br>{response}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        st.rerun()
+    # React to user input (입력창 처리 부분은 아래에서 통합 처리)
+
+    # 기존 텍스트 입력창은 페이지 맨 아래에 위치시키면 사실상 고정 입력처럼 동작합니다.
+    # 채팅 입력 처리: 입력이 제출되면 공통 함수로 처리하고 새로고침
     if prompt := st.chat_input("질문을 입력하세요"):
-        # 유저 메시지(오른쪽, 이미지 포함)
-        st.markdown(f"""
-        <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
-            <img src='https://cdn-icons-png.flaticon.com/512/1946/1946429.png' width='32' style='margin-left:8px; border-radius:50%;'/>
-            <div>
-                <b>나</b><br>{prompt}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        process_user_prompt(prompt)
+        st.rerun()
 
-        # 챗봇 메시지(왼쪽, 이미지 포함, 생성중 표시)
-        with st.spinner("생성 중... 💬"):
-            response = respond(prompt)
-        st.markdown(f"""
-        <div style='display:flex; align-items:center; text-align:left; background:#fffde7; padding:8px 16px; border-radius:12px; margin:8px 0; max-width:70%; box-shadow:0 2px 8px #eee;'>
-            <img src='https://github.com/hajing09-dev/ChatSHHS/blob/main/seohyun.png?raw=true' width='32' style='margin-right:8px; border-radius:50%;'/>
-            <div>
-                <b>ChatSHHS</b><br>{response}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        st.session_state.messages.append({"role": "assistant", "content": response})
