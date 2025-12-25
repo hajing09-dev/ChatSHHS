@@ -5,6 +5,7 @@ import requests
 import xml.etree.ElementTree as ET
 from openai import OpenAI
 import datetime
+import os
 #급식 정보 호출
 def lunch(date):
   url="https://open.neis.go.kr/hub/mealServiceDietInfo"
@@ -140,9 +141,16 @@ def respond(prompt):
     #챗봇에게 날짜를 제공하기 위한 변수
     today = datetime.date.today().isoformat()
 
-    # 환경 변수에서 API 키 로드 (직접 넣는 대신 os.getenv 권장)
-    api_key = ''  # 시준님 키 그대로 두셔도 되고, os.getenv("OPENAI_API_KEY") 쓰셔도 됩니다.
-
+    # API 키 로드: secrets.toml 또는 환경 변수 사용
+    try:
+        api_key = st.secrets["openai"]["api_key"]
+    except:
+        api_key = os.getenv("OPENAI_API_KEY")
+    
+    if not api_key:
+        st.error("⚠️ OpenAI API 키가 설정되지 않았습니다. .streamlit/secrets.toml 파일에 추가하거나 OPENAI_API_KEY 환경 변수를 설정해주세요.")
+        st.stop()
+    
     # OpenAI 클라이언트 초기화
     client = OpenAI(api_key=api_key)
     week=datetime.datetime.now()
@@ -282,6 +290,10 @@ else:
     # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    
+    # Initialize recommended questions flag
+    if "recommended_used" not in st.session_state:
+        st.session_state.recommended_used = False
 
     # Display chat messages from history on app rerun (커스텀 방향)
     for message in st.session_state.messages:
@@ -303,8 +315,15 @@ else:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-    ex1=st.button('내일 급식 메뉴가 뭐야?')
-    ex2=st.button('12월 26일에 무슨 행사가 있어?')
+    
+    # Recommended questions (show only if not used)
+    if not st.session_state.recommended_used:
+        ex1=st.button('내일 급식 메뉴가 뭐야?')
+        ex2=st.button('12월 26일에 무슨 행사가 있어?')
+    else:
+        ex1 = False
+        ex2 = False
+    
     # React to user input
     if prompt := st.chat_input("질문을 입력하세요"):
         # 유저 메시지(오른쪽, 이미지 포함)
@@ -331,6 +350,7 @@ else:
         """, unsafe_allow_html=True)
         st.session_state.messages.append({"role": "assistant", "content": response})
     if ex1:
+        st.session_state.recommended_used = True
         prompt='내일 급식 메뉴가 뭐야?'
         st.markdown(f"""
         <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
@@ -355,6 +375,7 @@ else:
         """, unsafe_allow_html=True)
         st.session_state.messages.append({"role": "assistant", "content": response})
     if ex2:
+        st.session_state.recommended_used = True
         prompt='12월 26일에 무슨 행사가 있어?'
         st.markdown(f"""
         <div style='display:flex; flex-direction:row-reverse; align-items:center; text-align:right; background:#e0f7fa; padding:8px 16px; border-radius:12px; margin:8px 0 8px auto; max-width:70%; box-shadow:0 2px 8px #eee;'>
