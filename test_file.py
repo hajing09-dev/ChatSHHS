@@ -2,9 +2,7 @@
 
 import streamlit as st
 import requests
-import json
 import xml.etree.ElementTree as ET
-import os
 from openai import OpenAI
 import datetime
 #급식 정보 호출
